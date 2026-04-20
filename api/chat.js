@@ -1,6 +1,6 @@
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).json({ message: "Method not allowed" });
+    return res.status(405).json({ reply: "Only POST allowed" });
   }
 
   try {
@@ -14,17 +14,25 @@ export default async function handler(req, res) {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          contents: [{ parts: [{ text: message }] }],
+          contents: [
+            {
+              parts: [{ text: message }],
+            },
+          ],
         }),
       }
     );
 
     const data = await response.json();
-    const reply = data.candidates[0].content.parts[0].text;
+
+    const reply =
+      data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+      "No response from AI";
 
     res.status(200).json({ reply });
 
   } catch (error) {
-    res.status(500).json({ reply: "Error from AI" });
+    console.error(error);
+    res.status(500).json({ reply: "Backend error" });
   }
 }
