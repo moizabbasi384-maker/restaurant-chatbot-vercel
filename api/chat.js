@@ -1,5 +1,4 @@
 export default async function handler(req, res) {
-  // ===== CORS FIX =====
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
@@ -14,26 +13,28 @@ export default async function handler(req, res) {
 
   try {
     const message = req.body?.message;
-
     if (!message) {
-      return res.status(400).json({ reply: "Message is required" });
+      return res.status(400).json({ reply: "Message required" });
     }
 
-    const apiKey = process.env.GEMINI_API_KEY;
-
-    // 🔥 NEW GEMINI FORMAT (THIS FIXES EVERYTHING)
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      "https://openrouter.ai/api/v1/chat/completions",
       {
         method: "POST",
         headers: {
+          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          contents: [
+          model: "meta-llama/llama-3.3-70b-instruct",
+          messages: [
+            {
+              role: "system",
+              content: "You are a helpful restaurant assistant. Keep answers short."
+            },
             {
               role: "user",
-              parts: [{ text: message }]
+              content: message
             }
           ]
         })
@@ -42,22 +43,17 @@ export default async function handler(req, res) {
 
     const data = await response.json();
 
-    console.log("FULL RESPONSE:", JSON.stringify(data, null, 2));
+    console.log("OPENROUTER RESPONSE:", JSON.stringify(data, null, 2));
 
     const reply =
-      data?.candidates?.[0]?.content?.parts?.[0]?.text;
-
-    if (!reply) {
-      return res.status(500).json({
-        reply: "AI returned empty response",
-        debug: data
-      });
-    }
+      data?.choices?.[0]?.message?.content ||
+      data?.error?.message ||
+      "No response";
 
     return res.status(200).json({ reply });
 
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     return res.status(500).json({ reply: "Server error" });
   }
 }
