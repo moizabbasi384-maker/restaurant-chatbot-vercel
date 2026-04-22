@@ -1,59 +1,65 @@
+const clients = {
+  "cafe-bliss": {
+    name: "Cafe Bliss",
+    hours: "9AM - 11PM",
+    apiKey: "key_12345",
+    active: true
+  }
+};
+
 export default async function handler(req, res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  const { message, clientId, apiKey } = req.body;
 
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
+  const client = clients[clientId];
+
+  if (!client) {
+    return res.status(404).json({ reply: "Client not found" });
   }
 
-  if (req.method !== "POST") {
-    return res.status(405).json({ reply: "Only POST allowed" });
+  if (client.apiKey !== apiKey) {
+    return res.status(403).json({ reply: "Invalid API key" });
   }
+
+  if (!client.active) {
+    return res.status(403).json({
+      reply: "Service disabled. Please contact support."
+    });
+  }
+
+  // 🧠 Build prompt
+  const prompt = `
+You are an assistant for ${client.name}.
+
+Business hours: ${client.hours}
+
+User question:
+${message}
+`;
 
   try {
-    const message = req.body?.message;
-    if (!message) {
-      return res.status(400).json({ reply: "Message required" });
-    }
+    const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "meta-llama/llama-3.1-8b-instruct",
+        messages: [
+          { role: "user", content: prompt }
+        ]
+      })
+    });
 
-    const response = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          model: "meta-llama/llama-3.3-70b-instruct",
-          messages: [
-            {
-              role: "system",
-              content: "You are a helpful restaurant assistant. Keep answers short."
-            },
-            {
-              role: "user",
-              content: message
-            }
-          ]
-        })
-      }
-    );
+    const data = await aiRes.json();
 
-    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content || "No response";
 
-    console.log("OPENROUTER RESPONSE:", JSON.stringify(data, null, 2));
-
-    const reply =
-      data?.choices?.[0]?.message?.content ||
-      data?.error?.message ||
-      "No response";
-
-    return res.status(200).json({ reply });
+    return res.json({ reply });
 
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ reply: "Server error" });
+    return res.status(500).json({
+      reply: "Error talking to AI"
+    });
   }
 }
