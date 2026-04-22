@@ -1,65 +1,72 @@
-const clients = {
-  "cafe-bliss": {
-    name: "Cafe Bliss",
-    hours: "9AM - 11PM",
-    apiKey: "key_12345",
-    active: true
-  }
-};
-
 export default async function handler(req, res) {
-  const { message, clientId, apiKey } = req.body;
+  // ✅ CORS (VERY IMPORTANT for WordPress)
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
 
-  const client = clients[clientId];
-
-  if (!client) {
-    return res.status(404).json({ reply: "Client not found" });
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
   }
 
-  if (client.apiKey !== apiKey) {
-    return res.status(403).json({ reply: "Invalid API key" });
+  if (req.method !== "POST") {
+    return res.status(405).json({ reply: "Only POST allowed" });
   }
-
-  if (!client.active) {
-    return res.status(403).json({
-      reply: "Service disabled. Please contact support."
-    });
-  }
-
-  // 🧠 Build prompt
-  const prompt = `
-You are an assistant for ${client.name}.
-
-Business hours: ${client.hours}
-
-User question:
-${message}
-`;
 
   try {
-    const aiRes = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ reply: "Message is required" });
+    }
+
+    const apiKey = process.env.OPENROUTER_API_KEY;
+
+    if (!apiKey) {
+      return res.status(500).json({ reply: "Missing API key" });
+    }
+
+    // 🔥 OPENROUTER REQUEST (LLAMA 3.3 70B FREE)
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${process.env.OPENROUTER_API_KEY}`,
-        "Content-Type": "application/json"
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://restaurant-chatbot-vercel-djgd.vercel.app",
+        "X-Title": "Karachi Bites Assistant"
       },
       body: JSON.stringify({
-        model: "meta-llama/llama-3.1-8b-instruct",
+        model: "meta-llama/llama-3.3-70b-instruct:free",
         messages: [
-          { role: "user", content: prompt }
+          {
+            role: "system",
+            content: "You are a restaurant assistant for Karachi Bites in Pakistan. No Hindi words like Namaste. Keep replies short and helpful."
+          },
+          {
+            role: "user",
+            content: message
+          }
         ]
       })
     });
 
-    const data = await aiRes.json();
+    const data = await response.json();
 
-    const reply = data.choices?.[0]?.message?.content || "No response";
+    console.log("FULL RESPONSE:", JSON.stringify(data, null, 2));
 
-    return res.json({ reply });
+    const reply =
+      data?.choices?.[0]?.message?.content;
 
-  } catch (err) {
-    return res.status(500).json({
-      reply: "Error talking to AI"
-    });
+    if (!reply) {
+      return res.status(500).json({
+        reply: "AI returned empty response",
+        debug: data
+      });
+    }
+
+    return res.status(200).json({ reply });
+
+  } catch (error) {
+    console.error("ERROR:", error);
+    return res.status(500).json({ reply: "Server error" });
   }
 }
